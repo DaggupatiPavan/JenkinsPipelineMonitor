@@ -54,6 +54,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   useEffect(() => {
     if (!autoConnect) return
 
+    // Only connect if not already connecting or connected
+    if (state.connecting || state.connected) return
+
     setState(prev => ({ ...prev, connecting: true }))
 
     // Initialize socket connection

@@ -83,14 +83,21 @@ export default function JenkinsDashboard() {
   const [selectedPipeline, setSelectedPipeline] = useState<Pipeline | null>(null)
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected')
   const [connectionError, setConnectionError] = useState('')
+  const [isMounted, setIsMounted] = useState(false)
   
   // WebSocket integration
+  const pipelineIds = pipelines.map(p => p.id)
   const websocket = useWebSocket({
     autoConnect: true,
     enableNotifications: true,
     enableMonitoring: true,
-    pipelineIds: pipelines.map(p => p.id)
+    pipelineIds: pipelineIds
   })
+
+  // Handle component mounting to avoid hydration issues
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   // Mock data for demonstration
   const mockPipelines: Pipeline[] = [
@@ -304,25 +311,47 @@ export default function JenkinsDashboard() {
     setConnectionError('')
 
     try {
-      // Test the connection
-      const response = await fetch(
+      // First test the connection
+      const testResponse = await fetch('/api/jenkins/test-connection', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url: jenkinsConfig.url,
+          username: jenkinsConfig.username,
+          apiToken: jenkinsConfig.apiToken
+        })
+      })
+
+      const testResult = await testResponse.json()
+
+      if (!testResult.success) {
+        setConnectionStatus('error')
+        setConnectionError(testResult.message || 'Failed to connect to Jenkins')
+        return
+      }
+
+      // If connection test passes, try to fetch jobs
+      const jobsResponse = await fetch(
         `/api/jenkins/jobs?url=${encodeURIComponent(jenkinsConfig.url)}&username=${encodeURIComponent(jenkinsConfig.username)}&apiToken=${encodeURIComponent(jenkinsConfig.apiToken)}`
       )
 
-      if (response.ok) {
+      if (jobsResponse.ok) {
         setConnectionStatus('connected')
         setUseMockData(false)
         setConfigOpen(false)
         // Trigger a refresh with new config
         setLoading(true)
       } else {
-        const errorData = await response.json()
+        const errorData = await jobsResponse.json()
         setConnectionStatus('error')
-        setConnectionError(errorData.error || 'Failed to connect to Jenkins')
+        setConnectionError(errorData.error || 'Failed to fetch Jenkins jobs')
       }
     } catch (error) {
+      console.error('Connection error:', error)
       setConnectionStatus('error')
-      setConnectionError('Network error while connecting to Jenkins')
+      setConnectionError('Network error while connecting to Jenkins. Please check if Jenkins is accessible from this browser.')
     }
   }
 
@@ -410,13 +439,14 @@ export default function JenkinsDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Dialog open={configOpen} onOpenChange={setConfigOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-yellow-600 hover:bg-yellow-700">
-                  <Server className="mr-2 h-4 w-4" />
-                  Configure Jenkins Connection
-                </Button>
-              </DialogTrigger>
+            {isMounted && (
+              <Dialog open={configOpen} onOpenChange={setConfigOpen}>
+                <DialogTrigger asChild>
+                  <Button className="bg-yellow-600 hover:bg-yellow-700">
+                    <Server className="mr-2 h-4 w-4" />
+                    Configure Jenkins Connection
+                  </Button>
+                </DialogTrigger>
               <DialogContent className="sm:max-w-[500px]">
                 <DialogHeader>
                   <DialogTitle>Jenkins Configuration</DialogTitle>
@@ -464,7 +494,18 @@ export default function JenkinsDashboard() {
                   </div>
                   {connectionError && (
                     <div className="col-span-4 text-red-600 text-sm bg-red-50 p-2 rounded">
-                      {connectionError}
+                      <div className="font-medium mb-1">Connection Error:</div>
+                      <div>{connectionError}</div>
+                      <div className="mt-2 text-xs">
+                        <strong>Troubleshooting tips:</strong>
+                        <ul className="list-disc list-inside mt-1 space-y-1">
+                          <li>Ensure Jenkins is running and accessible</li>
+                          <li>Check if the URL is correct (include http:// or https://)</li>
+                          <li>Verify your username and API token</li>
+                          <li>Check if Jenkins has CORS enabled for this domain</li>
+                          <li>Try accessing Jenkins directly in your browser</li>
+                        </ul>
+                      </div>
                     </div>
                   )}
                   <div className="col-span-4 text-sm text-gray-600">
@@ -501,6 +542,7 @@ export default function JenkinsDashboard() {
                 </div>
               </DialogContent>
             </Dialog>
+            )}
           </CardContent>
         </Card>
       )}
@@ -865,25 +907,27 @@ export default function JenkinsDashboard() {
       </Tabs>
 
       {/* Log Viewer Dialog */}
-      <Dialog open={logViewerOpen} onOpenChange={setLogViewerOpen}>
-        <DialogContent className="max-w-6xl max-h-[90vh]">
-          <DialogHeader>
-            <DialogTitle>Build Logs</DialogTitle>
-            <DialogDescription>
-              View detailed logs for pipeline execution
-            </DialogDescription>
-          </DialogHeader>
-          {selectedPipeline && (
-            <LogViewer
-              pipelineId={selectedPipeline.id}
-              pipelineName={selectedPipeline.name}
-              buildNumber={parseInt(selectedPipeline.id.split('-')[1]) || undefined}
-              logs={selectedPipeline.stages.flatMap(s => s.logs)}
-              onClose={() => setLogViewerOpen(false)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+      {isMounted && (
+        <Dialog open={logViewerOpen} onOpenChange={setLogViewerOpen}>
+          <DialogContent className="max-w-6xl max-h-[90vh]">
+            <DialogHeader>
+              <DialogTitle>Build Logs</DialogTitle>
+              <DialogDescription>
+                View detailed logs for pipeline execution
+              </DialogDescription>
+            </DialogHeader>
+            {selectedPipeline && (
+              <LogViewer
+                pipelineId={selectedPipeline.id}
+                pipelineName={selectedPipeline.name}
+                buildNumber={parseInt(selectedPipeline.id.split('-')[1]) || undefined}
+                logs={selectedPipeline.stages.flatMap(s => s.logs)}
+                onClose={() => setLogViewerOpen(false)}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }

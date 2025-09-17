@@ -52,9 +52,11 @@ export function LogViewer({
   const [levelFilter, setLevelFilter] = useState<string>('ALL')
   const [autoRefresh, setAutoRefresh] = useState(false)
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null)
+  const [isMounted, setIsMounted] = useState(false)
 
   // Parse initial logs
   useEffect(() => {
+    setIsMounted(true)
     if (initialLogs.length > 0) {
       const parsedLogs = parseLogs(initialLogs)
       setLogs(parsedLogs)
@@ -173,8 +175,30 @@ export function LogViewer({
     URL.revokeObjectURL(url)
   }
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
+  const copyToClipboard = async (text: string) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        // Fallback for older browsers or non-secure contexts
+        const textArea = document.createElement('textarea')
+        textArea.value = text
+        textArea.style.position = 'fixed'
+        textArea.style.left = '-999999px'
+        textArea.style.top = '-999999px'
+        document.body.appendChild(textArea)
+        textArea.focus()
+        textArea.select()
+        try {
+          document.execCommand('copy')
+        } catch (err) {
+          console.error('Failed to copy text:', err)
+        }
+        document.body.removeChild(textArea)
+      }
+    } catch (error) {
+      console.error('Failed to copy text:', error)
+    }
   }
 
   const logStats = {
@@ -360,65 +384,67 @@ export function LogViewer({
       </Card>
 
       {/* Log Detail Modal */}
-      <Dialog open={!!selectedLog} onOpenChange={() => setSelectedLog(null)}>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Log Entry Details</DialogTitle>
-            <DialogDescription>
-              Detailed view of the selected log entry
-            </DialogDescription>
-          </DialogHeader>
-          {selectedLog && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                  <label className="text-sm font-medium">Level</label>
-                  <div className="flex items-center gap-2 mt-1">
-                    {getLevelIcon(selectedLog.level)}
-                    <Badge>{selectedLog.level}</Badge>
+      {isMounted && (
+        <Dialog open={!!selectedLog} onOpenChange={() => setSelectedLog(null)}>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>Log Entry Details</DialogTitle>
+              <DialogDescription>
+                Detailed view of the selected log entry
+              </DialogDescription>
+            </DialogHeader>
+            {selectedLog && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="text-sm font-medium">Level</label>
+                    <div className="flex items-center gap-2 mt-1">
+                      {getLevelIcon(selectedLog.level)}
+                      <Badge>{selectedLog.level}</Badge>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Timestamp</label>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {new Date(selectedLog.timestamp).toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Source</label>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {selectedLog.source || 'Unknown'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Stage</label>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {selectedLog.stage || 'Unknown'}
+                    </p>
                   </div>
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Timestamp</label>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {new Date(selectedLog.timestamp).toLocaleString()}
-                  </p>
+                  <label className="text-sm font-medium">Message</label>
+                  <div className="mt-1 p-3 bg-muted rounded-md font-mono text-sm">
+                    {selectedLog.message}
+                  </div>
                 </div>
-                <div>
-                  <label className="text-sm font-medium">Source</label>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {selectedLog.source || 'Unknown'}
-                  </p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Stage</label>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {selectedLog.stage || 'Unknown'}
-                  </p>
-                </div>
-              </div>
-              <div>
-                <label className="text-sm font-medium">Message</label>
-                <div className="mt-1 p-3 bg-muted rounded-md font-mono text-sm">
-                  {selectedLog.message}
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => copyToClipboard(selectedLog.message)}
+                  >
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copy Message
+                  </Button>
+                  <Button variant="outline" onClick={() => setSelectedLog(null)}>
+                    Close
+                  </Button>
                 </div>
               </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => copyToClipboard(selectedLog.message)}
-                >
-                  <Copy className="h-4 w-4 mr-2" />
-                  Copy Message
-                </Button>
-                <Button variant="outline" onClick={() => setSelectedLog(null)}>
-                  Close
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }
